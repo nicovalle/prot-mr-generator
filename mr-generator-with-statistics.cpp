@@ -372,7 +372,7 @@ int main(int argc, const char *argv[]) {
     
     
     // 0. tmp folder creation
-    system(("mkdir "+tmpFolder).c_str());    
+    system(("mkdir -p "+tmpFolder).c_str());    
     
     // 1. Generates inputfile T (ABCD+DJHGAJHJHGD+...+KJHKAJSHKJASH+)
     system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles).c_str());    
