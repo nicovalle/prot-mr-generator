@@ -1,0 +1,23 @@
+#!/bin/bash
+
+declare -a families=("Annexin" "Arm" "Collagen" "CWbinding1" "Fer4" "Filamin" "HEAT" "HemolysinCabind" "Hexapep" "Kelch1" "Ldlrecepta" "Ldlreceptb" "LRR1" "Mitocarr" "" "MORN" "Nebulin" "NEWAnk" "NEWWD40" "PD40" "Pentapeptide" "PPR" "PUF" "Sel1" "TPR1" "TSP1" "YadAhead" "ABCtran" "CorA" "GDCP" "Globin" "Glycohydro19" "GreAGreB" "HelicaseC" "MgtE" "MIP" "PBP" "PeptidaseC25" "PFLlike" "PIN" "Pkinase" "PPbinding" "PUD" "Rhomboid" "TerB" "Thaumatin" "ValtRNAsyntC" "NEWAnk_SCRAMBLED" "NEWAnk_UNIFORM" "ABCtran_SCRAMBLED" "ABCtran_UNIFORM" "mix" "NEWAnk_TPR1" "NEWAnk_WithoutP25963")
+outputFolder="output"
+inputFolder="~/tesis/proteins_db/canonicalAminoacidsProteins/familyDataset"
+
+# creates output folder
+mkdir ${outputFolder}
+
+
+# generates MRs files (SMR, NN, NE) for each family in families
+for f in ${families[@]};
+do
+   echo 
+   echo 
+   echo Procesando: ${f}
+   ./mr-generator-with-statistics ${inputFolder}/$f/ 1 999999 1 ${outputFolder}/${f}
+done
+
+ 
+
+
+

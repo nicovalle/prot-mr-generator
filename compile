@@ -1,0 +1,1 @@
+g++ mr-generator-with-statistics.cpp -o mr-generator-with-statistics
