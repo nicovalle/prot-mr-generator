@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import glob
 import sys
+import os
 
 # arguments
 arguments = len(sys.argv) - 1
@@ -10,18 +11,15 @@ if(arguments!=2):
     quit()
 
 
-inputFiles = sys.argv[1]+'/*.fasta'
+inputFiles = os.path.join(sys.argv[1],'**/*.fasta')
 outputFile = sys.argv[2]
 
 #######################################
 # 1. reads sequences and concatenates them
-#######################################
-#inputFiles = '/home/pturjanski/kapow/data/omics/dferreiro/SRR1570769/*.fasta'
-# inputFiles = 'input/*.fasta'
-#outputFile = 'input/input.txt' 
+####################################### 
 
 T = ""
-for filename in glob.glob(inputFiles):
+for filename in glob.iglob(inputFiles,recursive=True):
   fasta_sequences = SeqIO.parse(open(filename),'fasta')
   for fasta in fasta_sequences:
     T+=str(fasta.seq)+"+"
