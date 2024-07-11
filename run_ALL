@@ -5,10 +5,6 @@ outputFolder="output"
 # change input folder pointing to parent folder that contains families datasets
 inputFolder="~/tesis/proteins_db/canonicalAminoacidsProteins"
 
-# creates output folder
-mkdir -p ${outputFolder}
-
-
 # generates MRs files (SMR, NN, NE) for each family in families
 for f in ${familiesDatasets[@]};
 do

@@ -371,11 +371,13 @@ int main(int argc, const char *argv[]) {
     set<string> NE;     // Nested     Maximal Repeats
     
     
-    // 0. tmp folder creation
-    system(("mkdir -p "+tmpFolder).c_str());    
+    // 0. folder creation
+    system(("mkdir -p "+tmpFolder).c_str());
+    system(("mkdir -p "+prefixOfOutputFilename).c_str());
     
     // 1. Generates inputfile T (ABCD+DJHGAJHJHGD+...+KJHKAJSHKJASH+)
-    system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles).c_str());    
+    cout << "Phase 1: Fasta files Concatenation & dataset creation      -> Started! " << endl;
+    system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles+" "+prefixOfOutputFilename).c_str());    
     cout << "Phase 1: Fasta files Concatenation                -> Finished! " << endl;
 
     // 2. Compute SA and n. 
