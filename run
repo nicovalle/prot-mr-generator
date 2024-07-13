@@ -10,7 +10,7 @@ do
    echo 
    echo 
    echo Procesando: ${f}
-   ./mr-generator-with-statistics ${inputFolder}/$f/ 1 999999 1 ${outputFolder}/${f}
+   ./mr-generator-with-statistics ${inputFolder} 1 999999 1 ${outputFolder} ${f}
 done
 
  

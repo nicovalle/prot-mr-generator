@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare -a familiesDatasets=("testGroupDataset" "familyDataset")
+declare -a familiesDatasets=("testGroupDataset")
 outputFolder="output"
 # change input folder pointing to parent folder that contains families datasets
 inputFolder="~/tesis/proteins_db/canonicalAminoacidsProteins"

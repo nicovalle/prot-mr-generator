@@ -9,6 +9,7 @@
 #include <set>
 #include <map>
 #include <vector>
+#include <string>
 
 using namespace std;
 
@@ -111,7 +112,7 @@ bool compute_LCP(const unsigned long n, const unsigned char* T, const unsigned l
     return true;
 }
 
-unsigned int numberOfaffectedProteins(const unsigned long i, unsigned long j, const unsigned long* SA, const unsigned long* idT){
+set<unsigned int> getAffectedProteins(const unsigned long i, unsigned long j, const unsigned long* SA, const unsigned long* idT){
     // compute how many proteins have the pattern
     
     // a. ids of proteins that have the pattern
@@ -124,22 +125,46 @@ unsigned int numberOfaffectedProteins(const unsigned long i, unsigned long j, co
         affectedProteins.insert(pID);
     }
 
-    return affectedProteins.size();
+    return affectedProteins;
 
 }
 
 
-void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned long* SA, const unsigned long* idT, const string & pattern){
+void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned long* SA, const unsigned long* idT, const string & pattern, const unsigned long patternId, const string patternType, std::ofstream& osALL){
     // save pattern to file if the pattern satisfy required conditions (the numberOfaffectedProteins)
     // a. compute the numberOfaffectedProteins
-    unsigned long affectedProteins = numberOfaffectedProteins(i,j,SA,idT);
+    set<unsigned int> affectedProteins = getAffectedProteins(i,j,SA,idT);
+    unsigned long numberOfAffectedProteins = affectedProteins.size();
     // b. if the pattern satisfy the condition, save it to the file
-    if(affectedProteins>=minNumberOfAffectedSequences){
-             os << pattern;                  // pattern
-	     os << "," << pattern.size();    // length of pattern
-	     os << "," << (j-i+1);           // instances 
-	     os << "," << affectedProteins;  // affected proteins
-	     os << endl; 
+    if(numberOfAffectedProteins>=minNumberOfAffectedSequences){
+        // 1. add to corresponding pattern type csv output
+        os << pattern;                  // pattern
+	    os << "," << pattern.size();    // length of pattern
+	    os << "," << (j-i+1);           // instances 
+	    os << "," << numberOfAffectedProteins;  // affected proteins
+	    os << endl; 
+
+        // 2. add to global pattern dataset json output
+        if (patternId == 0){
+            osALL << "{";
+        }else{
+            osALL << ",{";
+        }
+        osALL << "\"id\":" << patternId << ",";
+        osALL << "\"type\":\"" << patternType << "\",";
+        osALL << "\"pattern\":\"" << pattern << "\",";
+        osALL << "\"instances\":" << (j-i+1) << ",";
+        osALL << "\"affected_protein_ids\":[";
+        
+        for (std::set<unsigned int>::iterator it = affectedProteins.begin(); it != affectedProteins.end(); ++it) {
+            osALL << (*it)-1; //offset because idT starts counting at 1
+            if(next(it) != affectedProteins.end()){
+                osALL << ",";
+            }
+        }
+        osALL << "]}";
+
+
     }
     
 }
@@ -160,7 +185,7 @@ void addOccurrence(map<char, unsigned long> &map1, char e){
 }
 
 
-void computeTailleferPattern(const unsigned int l, const unsigned long i, unsigned long j, const unsigned long n, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* idT, const unsigned long* SA, const unsigned int* LCP, std::ofstream& osSMR, std::ofstream& osNN, std::ofstream& osNE){
+void computeTailleferPattern(const unsigned int l, const unsigned long i, unsigned long j, const unsigned long n, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* idT, const unsigned long* SA, const unsigned int* LCP, unsigned long &patternId, std::ofstream& osSMR, std::ofstream& osNN, std::ofstream& osNE, std::ofstream& osALL){
     // pattern classification 
     // require SA, LCP, l-interval (l,i,j)
     
@@ -204,8 +229,11 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
             cantBeExtended = (cantBeExtended && (it->second<=1));
         }
 
+        // default pattern type
+        string patternType = "MR";
         if(cantBeExtended) {
-                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, SA, idT, pattern); // It is SMR;
+                patternType = "SMR";
+                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is SMR;
         }
         else{   // Is it NN or NE?
             // Find an occurrence that is not right and left extensible
@@ -219,15 +247,18 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
                     isNested = false;
                 }
             }
-            if(isNested) { 
-                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, SA, idT, pattern); // It is a NE
+            if(isNested) {
+                patternType = "NE";
+                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is a NE
                                                                                         // (all pattern occurrence are nested)
             }
-            else         { 
-                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, SA, idT, pattern); // It is a NN
+            else { 
+                patternType = "NN";
+                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is a NN
                                                                                         // (At least one pattern occurrence is non-nested)
             }
         }
+        patternId++;
     } 
 }
 
@@ -260,8 +291,17 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
         return false;
     }
     addHeader(osNE);
-    
+
+    // ... unified MR dataset
+    ofstream osALL((outputFilename+"_ALL.json").c_str());
+    if(!osALL.good()){
+        cout << "Error! function " << __FUNCTION__ << " cannot open ALL file" << endl;
+        return false;
+    }
+    osALL << "{ \"patterns\" : [";
+
     // b. Patterns classification. 
+    unsigned long patternId = 0;
     // ... Compute Intervals of the potential MRs
     vector<unsigned int> interval_l;
     vector<unsigned long> interval_i;
@@ -282,7 +322,7 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
             unsigned long j = interval_j[interval_j.size()-1];
             if((l>=minLengthOfPattern) && (l<=maxLengthOfPattern)){ 
                 // compute pattern. If it is MR AND satisfy additional conditions then save it to the corresponding output file
-                computeTailleferPattern(l,i,j,n,minNumberOfAffectedSequences,T,idT,SA,LCP,osSMR, osNN, osNE);
+                computeTailleferPattern(l,i,j,n,minNumberOfAffectedSequences,T,idT,SA,LCP,patternId, osSMR, osNN, osNE, osALL);
             }
             
             lb = interval_i[interval_i.size()-1];
@@ -302,6 +342,8 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
     osSMR.close();
     osNN.close();
     osNE.close();
+    osALL << "]}";
+    osALL.close();
 
     return true;
 }
@@ -311,8 +353,8 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
 int main(int argc, const char *argv[]) {
    
   // paramaeter checking
-    if(argc!=6){
-                cout<<"usage example: " << argv[0] << " inputFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences prefixOfOutputFilename" << endl;
+    if(argc!=7){
+                cout<<"usage example: " << argv[0] << " inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
                 return 0;
     }
 
@@ -324,8 +366,13 @@ int main(int argc, const char *argv[]) {
 
     // 1. Parameters
     // =============
+
+    //f. family name
+    string proteinGroupFolderName = argv[6];
+
     //a. inputFolder (folder with *.fasta files)
-    string inputFolder=  argv[1];
+    string inputFolder =  argv[1];
+    inputFolder += "/" + proteinGroupFolderName + "/";
 
     //b. minLengthOfPattern
     unsigned long minLengthOfPattern=toUnsignedLong(argv[2]);
@@ -336,9 +383,9 @@ int main(int argc, const char *argv[]) {
     //d. minNumberOfAffectedSequences
     unsigned long minNumberOfAffectedSequences=toUnsignedLong(argv[4]);
     
-    //e. prefix of output file
-    string prefixOfOutputFilename  =  argv[5];
-
+    //e. output folder
+    string outputFolderByFamily = argv[5]; 
+    outputFolderByFamily += "/" + proteinGroupFolderName;
 
     // More Parameters
     // ... folder for tmp files generated by this program
@@ -373,11 +420,11 @@ int main(int argc, const char *argv[]) {
     
     // 0. folder creation
     system(("mkdir -p "+tmpFolder).c_str());
-    system(("mkdir -p "+prefixOfOutputFilename).c_str());
+    system(("mkdir -p "+outputFolderByFamily).c_str());
     
     // 1. Generates inputfile T (ABCD+DJHGAJHJHGD+...+KJHKAJSHKJASH+)
     cout << "Phase 1: Fasta files Concatenation & dataset creation      -> Started! " << endl;
-    system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles+" "+prefixOfOutputFilename).c_str());    
+    system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles+" "+outputFolderByFamily).c_str());    
     cout << "Phase 1: Fasta files Concatenation                -> Finished! " << endl;
 
     // 2. Compute SA and n. 
@@ -400,7 +447,8 @@ int main(int argc, const char *argv[]) {
  
  
     // 5. patterns computation
-    string composedPrefixName=prefixOfOutputFilename;
+    string composedPrefixName=outputFolderByFamily + "/" + proteinGroupFolderName;
+;
     composedPrefixName+="_"+toString(minLengthOfPattern);
     composedPrefixName+="_"+toString(maxLengthOfPattern);
     composedPrefixName+="_"+toString(minNumberOfAffectedSequences);
