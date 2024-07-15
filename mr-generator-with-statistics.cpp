@@ -298,7 +298,7 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
         cout << "Error! function " << __FUNCTION__ << " cannot open ALL file" << endl;
         return false;
     }
-    osALL << "{ \"patterns\" : [";
+    osALL << "[";
 
     // b. Patterns classification. 
     unsigned long patternId = 0;
@@ -342,7 +342,7 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
     osSMR.close();
     osNN.close();
     osNE.close();
-    osALL << "]}";
+    osALL << "]";
     osALL.close();
 
     return true;
