@@ -153,6 +153,7 @@ void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsi
         osALL << "\"id\":" << patternId << ",";
         osALL << "\"type\":\"" << patternType << "\",";
         osALL << "\"pattern\":\"" << pattern << "\",";
+        osALL << "\"length\":" << pattern.size() << ",";
         osALL << "\"instances\":" << (j-i+1) << ",";
         osALL << "\"affected_protein_ids\":[";
         
