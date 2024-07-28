@@ -112,29 +112,57 @@ bool compute_LCP(const unsigned long n, const unsigned char* T, const unsigned l
     return true;
 }
 
-set<unsigned int> getAffectedProteins(const unsigned long i, unsigned long j, const unsigned long* SA, const unsigned long* idT){
+std::map<unsigned long, std::vector<unsigned long>> getAffectedProteins(const unsigned long i, unsigned long j, const unsigned char* T, const unsigned long* SA, const unsigned long* idT){
     // compute how many proteins have the pattern
     
-    // a. ids of proteins that have the pattern
-    set<unsigned int> affectedProteins;
+    // a. map of protein ids with local starting index list
+    std::map<unsigned long, std::vector<unsigned long>> affectedProteins;
     // b. for each pattern occurrence, takes its protein id
     for(unsigned long iSA=i;iSA<=j;iSA++){
-        // It finds the pattern proteinID
-        unsigned long pID=(idT[SA[iSA]]);
-        // Add proteinID
-        affectedProteins.insert(pID);
+        // suffix array has index of pattern start in T
+        unsigned long iT = SA[iSA];
+        // that same index in idT provides proteinID
+        unsigned long pID=(idT[iT]);
+        // to get local index of pattern in local protein string
+        // we need to offset iT to the leftmost "+" separator index
+        unsigned long jT = iT;
+        while(jT > 0){
+            if(T[jT-1] != '+'){
+                jT--;
+            }else{
+                break;
+            }
+        }
+        iT -= jT;
+
+        // Add proteinID and starting position of pattern
+        std::map<unsigned long, std::vector<unsigned long>>::iterator it = affectedProteins.find(pID);
+        if (it != affectedProteins.end()) {
+            it->second.push_back(iT);
+        } else {
+            affectedProteins[pID] = {iT};
+        }
     }
 
     return affectedProteins;
 
 }
 
+std::set<unsigned long> getMapKeys(std::map<unsigned long, std::vector<unsigned long>> map){
+    std::set<unsigned long> keySet;
 
-void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned long* SA, const unsigned long* idT, const string & pattern, const unsigned long patternId, const string patternType, std::ofstream& osALL){
+    for (const auto& pair : map) {
+        keySet.insert(pair.first);
+    }
+    return keySet;
+}
+
+void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* SA, const unsigned long* idT, const string & pattern, const unsigned long patternId, const string patternType, std::ofstream& osALL){
     // save pattern to file if the pattern satisfy required conditions (the numberOfaffectedProteins)
     // a. compute the numberOfaffectedProteins
-    set<unsigned int> affectedProteins = getAffectedProteins(i,j,SA,idT);
-    unsigned long numberOfAffectedProteins = affectedProteins.size();
+    std::map<unsigned long, std::vector<unsigned long>> affectedProteins = getAffectedProteins(i,j,T,SA,idT);
+    set<unsigned long> affectedProteinIds = getMapKeys(affectedProteins);
+    unsigned long numberOfAffectedProteins = affectedProteinIds.size();
     // b. if the pattern satisfy the condition, save it to the file
     if(numberOfAffectedProteins>=minNumberOfAffectedSequences){
         // 1. add to corresponding pattern type csv output
@@ -155,19 +183,27 @@ void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsi
         osALL << "\"pattern\":\"" << pattern << "\",";
         osALL << "\"length\":" << pattern.size() << ",";
         osALL << "\"instances\":" << (j-i+1) << ",";
-        osALL << "\"affected_protein_ids\":[";
+        osALL << "\"affected_proteins\":[";
         
-        for (std::set<unsigned int>::iterator it = affectedProteins.begin(); it != affectedProteins.end(); ++it) {
-            osALL << (*it)-1; //offset because idT starts counting at 1
-            if(next(it) != affectedProteins.end()){
+        for (std::set<unsigned long>::iterator it = affectedProteinIds.begin(); it != affectedProteinIds.end(); ++it) {
+            osALL << "{";
+            //offset because idT starts counting at 1
+            osALL << "\"protein_id\":" << (*it)-1 << ",";
+            osALL << "\"starting_positions\":[";
+            std::vector<unsigned long> positions = affectedProteins.find(*it)->second;
+            for (std::vector<unsigned long>::iterator pit = positions.begin(); pit != positions.end(); ++pit) {
+                osALL << *pit;
+                if(next(pit) != positions.end()){
+                    osALL << ",";
+                }
+            }
+            osALL << "]}";
+            if(next(it) != affectedProteinIds.end()){
                 osALL << ",";
             }
         }
         osALL << "]}";
-
-
     }
-    
 }
 
 
@@ -234,7 +270,7 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
         string patternType = "MR";
         if(cantBeExtended) {
                 patternType = "SMR";
-                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is SMR;
+                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is SMR;
         }
         else{   // Is it NN or NE?
             // Find an occurrence that is not right and left extensible
@@ -250,12 +286,12 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
             }
             if(isNested) {
                 patternType = "NE";
-                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is a NE
+                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is a NE
                                                                                         // (all pattern occurrence are nested)
             }
             else { 
                 patternType = "NN";
-                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, SA, idT, pattern, patternId, patternType, osALL); // It is a NN
+                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is a NN
                                                                                         // (At least one pattern occurrence is non-nested)
             }
         }
