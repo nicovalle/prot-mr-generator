@@ -31,7 +31,9 @@ seq_id = 0
 
 for filename in glob.iglob(inputFiles,recursive=True):
   fasta_sequences = SeqIO.parse(open(filename),'fasta')
-  family_name = os.path.basename(os.path.dirname(filename))  
+  family_name = os.path.basename(os.path.dirname(filename))
+  if seq_id % 50000 == 0:
+     print(seq_id)
   for fasta in fasta_sequences:
     sequence_name = str(fasta.name)
     sequence = str(fasta.seq)

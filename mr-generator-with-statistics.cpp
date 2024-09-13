@@ -157,7 +157,7 @@ std::set<unsigned long> getMapKeys(std::map<unsigned long, std::vector<unsigned 
     return keySet;
 }
 
-void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* SA, const unsigned long* idT, const string & pattern, const unsigned long patternId, const string patternType, std::ofstream& osALL){
+void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsigned long j, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* SA, const unsigned long* idT, const string & pattern, const unsigned long patternId, const string patternType, std::ofstream& osALL, std::ofstream& osPOS){
     // save pattern to file if the pattern satisfy required conditions (the numberOfaffectedProteins)
     // a. compute the numberOfaffectedProteins
     std::map<unsigned long, std::vector<unsigned long>> affectedProteins = getAffectedProteins(i,j,T,SA,idT);
@@ -166,43 +166,28 @@ void AddPatternIfApplicable(std::ofstream& os, const unsigned long i, const unsi
     // b. if the pattern satisfy the condition, save it to the file
     if(numberOfAffectedProteins>=minNumberOfAffectedSequences){
         // 1. add to corresponding pattern type csv output
-        os << pattern;                  // pattern
+        /*os << pattern;                  // pattern
 	    os << "," << pattern.size();    // length of pattern
 	    os << "," << (j-i+1);           // instances 
 	    os << "," << numberOfAffectedProteins;  // affected proteins
-	    os << endl; 
+	    os << endl; */
 
-        // 2. add to global pattern dataset json output
-        if (patternId == 0){
-            osALL << "{";
-        }else{
-            osALL << ",{";
-        }
-        osALL << "\"id\":" << patternId << ",";
-        osALL << "\"type\":\"" << patternType << "\",";
-        osALL << "\"pattern\":\"" << pattern << "\",";
-        osALL << "\"length\":" << pattern.size() << ",";
-        osALL << "\"instances\":" << (j-i+1) << ",";
-        osALL << "\"affected_proteins\":[";
+        // 2. add to global pattern dataset csv output
+        osALL << patternId << ",";
+        osALL << patternType << ",";
+        osALL << pattern << ",";
+        //osALL << "\"length\":" << pattern.size() << ",";
+        osALL << (j-i+1) << endl;
         
         for (std::set<unsigned long>::iterator it = affectedProteinIds.begin(); it != affectedProteinIds.end(); ++it) {
-            osALL << "{";
-            //offset because idT starts counting at 1
-            osALL << "\"protein_id\":" << (*it)-1 << ",";
-            osALL << "\"starting_positions\":[";
             std::vector<unsigned long> positions = affectedProteins.find(*it)->second;
             for (std::vector<unsigned long>::iterator pit = positions.begin(); pit != positions.end(); ++pit) {
-                osALL << *pit;
-                if(next(pit) != positions.end()){
-                    osALL << ",";
-                }
-            }
-            osALL << "]}";
-            if(next(it) != affectedProteinIds.end()){
-                osALL << ",";
+                osPOS << patternId << ",";
+                //offset because idT starts counting at 1
+                osPOS << (*it)-1 << ",";
+                osPOS << *pit << endl;
             }
         }
-        osALL << "]}";
     }
 }
 
@@ -222,7 +207,7 @@ void addOccurrence(map<char, unsigned long> &map1, char e){
 }
 
 
-void computeTailleferPattern(const unsigned int l, const unsigned long i, unsigned long j, const unsigned long n, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* idT, const unsigned long* SA, const unsigned int* LCP, unsigned long &patternId, std::ofstream& osSMR, std::ofstream& osNN, std::ofstream& osNE, std::ofstream& osALL){
+void computeTailleferPattern(const unsigned int l, const unsigned long i, unsigned long j, const unsigned long n, const unsigned int minNumberOfAffectedSequences, const unsigned char* T, const unsigned long* idT, const unsigned long* SA, const unsigned int* LCP, unsigned long &patternId, std::ofstream& osSMR, std::ofstream& osNN, std::ofstream& osNE, std::ofstream& osALL, std::ofstream& osPOS){
     // pattern classification 
     // require SA, LCP, l-interval (l,i,j)
     
@@ -270,7 +255,7 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
         string patternType = "MR";
         if(cantBeExtended) {
                 patternType = "SMR";
-                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is SMR;
+                AddPatternIfApplicable(osSMR, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL, osPOS); // It is SMR;
         }
         else{   // Is it NN or NE?
             // Find an occurrence that is not right and left extensible
@@ -286,12 +271,12 @@ void computeTailleferPattern(const unsigned int l, const unsigned long i, unsign
             }
             if(isNested) {
                 patternType = "NE";
-                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is a NE
+                AddPatternIfApplicable(osNE, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL, osPOS); // It is a NE
                                                                                         // (all pattern occurrence are nested)
             }
             else { 
                 patternType = "NN";
-                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL); // It is a NN
+                AddPatternIfApplicable(osNN, i, j, minNumberOfAffectedSequences, T, SA, idT, pattern, patternId, patternType, osALL, osPOS); // It is a NN
                                                                                         // (At least one pattern occurrence is non-nested)
             }
         }
@@ -330,12 +315,20 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
     addHeader(osNE);
 
     // ... unified MR dataset
-    ofstream osALL((outputFilename+"_ALL.json").c_str());
+    ofstream osALL((outputFilename+"_PATTERNS.csv").c_str());
     if(!osALL.good()){
         cout << "Error! function " << __FUNCTION__ << " cannot open ALL file" << endl;
         return false;
     }
-    osALL << "[";
+    osALL << "pattern_id,type,pattern,instances" << endl;
+
+    // ... unified MR dataset
+    ofstream osPOS((outputFilename+"_POSITIONS.csv").c_str());
+    if(!osPOS.good()){
+        cout << "Error! function " << __FUNCTION__ << " cannot open ALL file" << endl;
+        return false;
+    }
+    osPOS << "pattern_id,protein_id,position" << endl;
 
     // b. Patterns classification. 
     unsigned long patternId = 0;
@@ -359,7 +352,7 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
             unsigned long j = interval_j[interval_j.size()-1];
             if((l>=minLengthOfPattern) && (l<=maxLengthOfPattern)){ 
                 // compute pattern. If it is MR AND satisfy additional conditions then save it to the corresponding output file
-                computeTailleferPattern(l,i,j,n,minNumberOfAffectedSequences,T,idT,SA,LCP,patternId, osSMR, osNN, osNE, osALL);
+                computeTailleferPattern(l,i,j,n,minNumberOfAffectedSequences,T,idT,SA,LCP,patternId, osSMR, osNN, osNE, osALL, osPOS);
             }
             
             lb = interval_i[interval_i.size()-1];
@@ -379,7 +372,7 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
     osSMR.close();
     osNN.close();
     osNE.close();
-    osALL << "]";
+    osPOS.close();
     osALL.close();
 
     return true;
