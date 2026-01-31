@@ -701,7 +701,93 @@ int main(int argc, const char *argv[]) {
     // Parse command-line flags
     string lcpAlgorithm = "naive"; // default
     bool testMode = false;
+    bool hasFlags = false;
     vector<string> positionalArgs;
+    
+    // Check if any flags are present
+    for (int i = 1; i < argc; i++) {
+        string arg = argv[i];
+        if (arg == "--lcp-algorithm" || arg == "-L" || arg == "--test-lcp" || arg == "-T" || arg == "--help" || arg == "-h") {
+            hasFlags = true;
+            break;
+        }
+    }
+    
+    // If no flags, use original behavior (backward compatibility)
+    if (!hasFlags) {
+        // Original parameter checking
+        if(argc!=7){
+            cout<<"usage example: " << argv[0] << " inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
+            return 0;
+        }
+        
+        // Use original direct argv access
+        string proteinGroupFolderName = argv[6];
+        string inputFolder = argv[1];
+        inputFolder += "/" + proteinGroupFolderName + "/";
+        unsigned long minLengthOfPattern=toUnsignedLong(argv[2]);
+        unsigned long maxLengthOfPattern=toUnsignedLong(argv[3]);
+        unsigned long minNumberOfAffectedSequences=toUnsignedLong(argv[4]);
+        string outputFolderByFamily = argv[5]; 
+        outputFolderByFamily += "/" + proteinGroupFolderName;
+        
+        // More Parameters
+        string tmpFolder = "./tmp/"; 
+        string multifastaConcatenateTool = "./multifastaConcatenate.py";
+        string tmpFastaConcatenatedFiles = tmpFolder+"_inputConcatenatedFastaFiles.txt";
+        string gsufsortTool ="./gsufsort/gsufsort-64";
+        string tmp_SA_File=tmpFolder+"_SA.tmp";
+        
+        // Variables
+        unsigned char *T;
+        unsigned long *idT;
+        unsigned long *SA;
+        unsigned int *LCP;
+        unsigned long n;
+        
+        set<string> SMR;
+        set<string> NN;
+        set<string> NE;
+        
+        // 0. folder creation
+        system(("mkdir -p "+tmpFolder).c_str());
+        system(("mkdir -p "+outputFolderByFamily).c_str());
+        
+        // 1. Generates inputfile T
+        cout << "Phase 1: Fasta files Concatenation & dataset creation      -> Started! " << endl;
+        system(("python3 "+multifastaConcatenateTool+" "+inputFolder+" "+tmpFastaConcatenatedFiles+" "+outputFolderByFamily).c_str());    
+        cout << "Phase 1: Fasta files Concatenation                -> Finished! " << endl;
+        
+        // 2. Compute SA and n.
+        ok=compute_SA(gsufsortTool, tmpFastaConcatenatedFiles, tmp_SA_File, tmpFolder,n, SA);
+        if(!ok) {
+            cout << "Error: compute_SA!" << endl;
+            return false;
+        }
+        cout << "Phase 2: Compute SA                               -> Finished! " << endl;
+        
+        // 3. Load original text (T).
+        ok=loadOriginalText(tmpFastaConcatenatedFiles, n, T, idT);
+        cout << "Phase 3: Load in memory conatenated *.fasta files -> Finished! " << endl;
+        
+        // 4. Compute LCP (using default naive algorithm for backward compatibility)
+        cout << "Phase 4: Compute LCP                              -> Started! " << endl;
+        ok=compute_LCP(n, T, SA, LCP, lcpAlgorithm);
+        if(!ok) return 1;
+        cout << "Phase 4: Compute LCP                              -> Finished! " << endl;
+        
+        // 5. patterns computation
+        string composedPrefixName=outputFolderByFamily + "/" + proteinGroupFolderName;
+        composedPrefixName+="_"+toString(minLengthOfPattern);
+        composedPrefixName+="_"+toString(maxLengthOfPattern);
+        composedPrefixName+="_"+toString(minNumberOfAffectedSequences);
+        
+        ok = computePatterns(composedPrefixName, n, T, idT, SA, LCP, minLengthOfPattern, maxLengthOfPattern, minNumberOfAffectedSequences);
+        if(!ok) return 1;
+        cout << "Phase 5: Compute patterns                         -> Finished! " << endl;
+        
+        return 0;
+    }
     
     // Parse arguments (handle flags and positional arguments)
     for (int i = 1; i < argc; i++) {
@@ -740,9 +826,9 @@ int main(int argc, const char *argv[]) {
     
     // parameter checking
     if(positionalArgs.size() != 6){
-                cout<<"usage example: " << argv[0] << " [OPTIONS] inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
-                cout << "Use --help or -h for more information." << endl;
-                return 0;
+        cout<<"usage example: " << argv[0] << " [OPTIONS] inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
+        cout << "Use --help or -h for more information." << endl;
+        return 0;
     }
 
 
