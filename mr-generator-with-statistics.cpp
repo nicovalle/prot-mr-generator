@@ -5,11 +5,14 @@
 #include <algorithm>
 #include <iterator>
 #include <math.h>
+#include <ctime>
+#include <cstring>
 
 #include <set>
 #include <map>
 #include <vector>
 #include <string>
+#include <utility>
 
 using namespace std;
 
@@ -88,8 +91,8 @@ bool loadOriginalText(const string inputTextFile, const unsigned long n, unsigne
 }
 
 
-bool compute_LCP(const unsigned long n, const unsigned char* T, const unsigned long* SA, unsigned int*& LCP){
-    // naive LCP computation
+bool compute_LCP_naive(const unsigned long n, const unsigned char* T, const unsigned long* SA, unsigned int*& LCP){
+    // naive LCP computation (O(n²) time complexity)
     // requires SA previously computed
     
     // a. memory allocation
@@ -110,6 +113,65 @@ bool compute_LCP(const unsigned long n, const unsigned char* T, const unsigned l
     LCP[0]=0;
 
     return true;
+}
+
+bool compute_LCP_kasai(const unsigned long n, const unsigned char* T, const unsigned long* SA, unsigned int*& LCP){
+    // Kasai's algorithm for LCP computation (O(n) time complexity)
+    // requires SA previously computed
+    
+    // a. memory allocation
+    LCP = (unsigned int *) malloc((unsigned long)n * sizeof(unsigned int));
+    if(LCP == NULL) {
+        fprintf(stderr, "Class mers->computeLCP_kasai: Cannot allocate memory.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // b. Build rank array (inverse of SA): rank[SA[i]] = i
+    unsigned long* rank = (unsigned long *) malloc((unsigned long)n * sizeof(unsigned long));
+    if(rank == NULL) {
+        fprintf(stderr, "Class mers->computeLCP_kasai: Cannot allocate memory for rank array.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    for (unsigned long i = 0; i < n; i++) {
+        rank[SA[i]] = i;
+    }
+
+    // c. Initialize LCP[0] = 0
+    LCP[0] = 0;
+
+    // d. Process suffixes in original text order (not SA order)
+    // Key insight: LCP[rank[i]] >= LCP[rank[i-1]] - 1
+    unsigned int h = 0;
+    for (unsigned long i = 0; i < n; i++) {
+        if (rank[i] > 0) {
+            unsigned long j = SA[rank[i] - 1];
+            // Skip already matched characters using the property above
+            while ((i + h < n) && (j + h < n) && 
+                   (T[i + h] == T[j + h]) && 
+                   (T[i + h] != '+')) {
+                h++;
+            }
+            LCP[rank[i]] = h;
+            // Key optimization: LCP[rank[i+1]] >= h-1, so we can start from h-1 next time
+            if (h > 0) h--;
+        }
+    }
+
+    free(rank);
+    return true;
+}
+
+bool compute_LCP(const unsigned long n, const unsigned char* T, const unsigned long* SA, unsigned int*& LCP, const string& algorithm = "naive"){
+    // Wrapper function that dispatches to the selected LCP algorithm
+    if (algorithm == "kasai") {
+        return compute_LCP_kasai(n, T, SA, LCP);
+    } else if (algorithm == "naive") {
+        return compute_LCP_naive(n, T, SA, LCP);
+    } else {
+        fprintf(stderr, "Error: Unknown LCP algorithm '%s'. Use 'naive' or 'kasai'.\n", algorithm.c_str());
+        return false;
+    }
 }
 
 std::map<unsigned long, std::vector<unsigned long>> getAffectedProteins(const unsigned long i, unsigned long j, const unsigned char* T, const unsigned long* SA, const unsigned long* idT){
@@ -378,18 +440,310 @@ bool computePatterns(const string outputFilename, const unsigned long n, const u
     return true;
 }
 
+// Helper function to compare two LCP arrays
+bool compareLCPArrays(unsigned int* lcp1, unsigned int* lcp2, unsigned long n) {
+    for (unsigned long i = 0; i < n; i++) {
+        if (lcp1[i] != lcp2[i]) {
+            return false;
+        }
+    }
+    return true;
+}
 
+// Helper function to compute checksum of LCP array
+unsigned long computeLCPChecksum(unsigned int* lcp, unsigned long n) {
+    unsigned long checksum = 0;
+    for (unsigned long i = 0; i < n; i++) {
+        checksum += lcp[i];
+        checksum = (checksum << 1) | (checksum >> 31); // Simple hash
+    }
+    return checksum;
+}
+
+// Helper function to print LCP array differences
+void printLCPDiff(unsigned int* lcp1, unsigned int* lcp2, unsigned long n, const unsigned long* SA, const unsigned char* T) {
+    cout << "LCP Array Differences:" << endl;
+    bool foundDiff = false;
+    for (unsigned long i = 0; i < n; i++) {
+        if (lcp1[i] != lcp2[i]) {
+            foundDiff = true;
+            cout << "  Index " << i << ": naive=" << lcp1[i] << ", kasai=" << lcp2[i];
+            if (i > 0 && SA != NULL && T != NULL) {
+                cout << " (SA[" << i-1 << "]=" << SA[i-1] << ", SA[" << i << "]=" << SA[i] << ")";
+            }
+            cout << endl;
+        }
+    }
+    if (!foundDiff) {
+        cout << "  No differences found." << endl;
+    }
+}
+
+// Test case runner
+bool runTestCase(const string& testName, const string& text, const unsigned long* SA, unsigned long n) {
+    cout << "\n=== Test: " << testName << " ===" << endl;
+    cout << "Text length: " << n << endl;
+    
+    // Convert string to unsigned char array
+    unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+    for (unsigned long i = 0; i < n; i++) {
+        T[i] = (unsigned char)text[i];
+    }
+    
+    // Compute LCP with both algorithms
+    unsigned int* lcp_naive = NULL;
+    unsigned int* lcp_kasai = NULL;
+    
+    clock_t start, end;
+    
+    start = clock();
+    bool ok1 = compute_LCP_naive(n, T, SA, lcp_naive);
+    end = clock();
+    double naive_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+    
+    start = clock();
+    bool ok2 = compute_LCP_kasai(n, T, SA, lcp_kasai);
+    end = clock();
+    double kasai_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+    
+    if (!ok1 || !ok2) {
+        cout << "ERROR: Failed to compute LCP arrays" << endl;
+        free(T);
+        if (lcp_naive) free(lcp_naive);
+        if (lcp_kasai) free(lcp_kasai);
+        return false;
+    }
+    
+    // Compare results
+    bool match = compareLCPArrays(lcp_naive, lcp_kasai, n);
+    unsigned long checksum_naive = computeLCPChecksum(lcp_naive, n);
+    unsigned long checksum_kasai = computeLCPChecksum(lcp_kasai, n);
+    
+    cout << "Naive time: " << naive_time << "s" << endl;
+    cout << "Kasai time: " << kasai_time << "s" << endl;
+    cout << "Speedup: " << (naive_time > 0 ? naive_time / kasai_time : 0) << "x" << endl;
+    cout << "Checksum (naive): " << checksum_naive << endl;
+    cout << "Checksum (kasai): " << checksum_kasai << endl;
+    
+    if (!match) {
+        cout << "FAILED: LCP arrays do not match!" << endl;
+        printLCPDiff(lcp_naive, lcp_kasai, n, SA, T);
+    } else {
+        cout << "PASSED: LCP arrays match perfectly" << endl;
+    }
+    
+    free(T);
+    free(lcp_naive);
+    free(lcp_kasai);
+    
+    return match;
+}
+
+// Simple SA computation for testing (naive approach)
+void computeSA_naive(const unsigned char* T, unsigned long n, unsigned long* SA) {
+    // Create array of indices
+    vector<pair<string, unsigned long>> suffixes;
+    for (unsigned long i = 0; i < n; i++) {
+        string suffix = "";
+        for (unsigned long j = i; j < n; j++) {
+            suffix += (char)T[j];
+        }
+        suffixes.push_back(make_pair(suffix, i));
+    }
+    
+    // Sort by suffix string
+    sort(suffixes.begin(), suffixes.end());
+    
+    // Fill SA array
+    for (unsigned long i = 0; i < n; i++) {
+        SA[i] = suffixes[i].second;
+    }
+}
+
+// Integrated test function
+bool runLCPComparisonTests() {
+    cout << "========================================" << endl;
+    cout << "LCP Algorithm Comparison Tests" << endl;
+    cout << "========================================" << endl;
+    
+    int passed = 0;
+    int total = 0;
+    
+    // Test Case 1: Simple string without separators
+    {
+        string text = "banana$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("Simple string (banana)", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Test Case 2: String with separators (protein-like)
+    {
+        string text = "ABCD+EFAB+GHAB+$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("String with separators", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Test Case 3: Repeated patterns
+    {
+        string text = "AAAA+BBBB+AAAA+$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("Repeated patterns", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Test Case 4: Single character
+    {
+        string text = "A$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("Single character", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Test Case 5: All same characters
+    {
+        string text = "AAAAA$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("All same characters", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Test Case 6: Protein-like sequence
+    {
+        string text = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL$";
+        unsigned long n = text.length();
+        unsigned long* SA = (unsigned long*)malloc(n * sizeof(unsigned long));
+        unsigned char* T = (unsigned char*)malloc(n * sizeof(unsigned char));
+        for (unsigned long i = 0; i < n; i++) {
+            T[i] = (unsigned char)text[i];
+        }
+        computeSA_naive(T, n, SA);
+        total++;
+        if (runTestCase("Protein-like sequence", text, SA, n)) {
+            passed++;
+        }
+        free(SA);
+        free(T);
+    }
+    
+    // Summary
+    cout << "\n========================================" << endl;
+    cout << "Test Summary" << endl;
+    cout << "========================================" << endl;
+    cout << "Passed: " << passed << "/" << total << endl;
+    if (passed == total) {
+        cout << "All tests PASSED!" << endl;
+        return true;
+    } else {
+        cout << "Some tests FAILED!" << endl;
+        return false;
+    }
+}
+
+// Forward declarations for test functions
+bool runLCPComparisonTests();
 
 int main(int argc, const char *argv[]) {
    
-  // paramaeter checking
-    if(argc!=7){
-                cout<<"usage example: " << argv[0] << " inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
+    bool ok;
+    
+    // Parse command-line flags
+    string lcpAlgorithm = "naive"; // default
+    bool testMode = false;
+    vector<string> positionalArgs;
+    
+    // Parse arguments (handle flags and positional arguments)
+    for (int i = 1; i < argc; i++) {
+        string arg = argv[i];
+        if (arg == "--lcp-algorithm" || arg == "-L") {
+            if (i + 1 < argc) {
+                lcpAlgorithm = argv[++i];
+                if (lcpAlgorithm != "naive" && lcpAlgorithm != "kasai") {
+                    cout << "Error: --lcp-algorithm must be 'naive' or 'kasai'" << endl;
+                    return 1;
+                }
+            } else {
+                cout << "Error: --lcp-algorithm requires a value (naive or kasai)" << endl;
+                return 1;
+            }
+        } else if (arg == "--test-lcp" || arg == "-T") {
+            testMode = true;
+        } else if (arg == "--help" || arg == "-h") {
+            cout << "Usage: " << argv[0] << " [OPTIONS] inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
+            cout << "\nOptions:" << endl;
+            cout << "  --lcp-algorithm, -L <naive|kasai>  Select LCP algorithm (default: naive)" << endl;
+            cout << "  --test-lcp, -T                     Run LCP algorithm comparison tests" << endl;
+            cout << "  --help, -h                         Show this help message" << endl;
+            return 0;
+        } else {
+            positionalArgs.push_back(arg);
+        }
+    }
+    
+    // If test mode, run tests and exit
+    if (testMode) {
+        cout << "Running LCP algorithm comparison tests..." << endl;
+        bool testResult = runLCPComparisonTests();
+        return testResult ? 0 : 1;
+    }
+    
+    // parameter checking
+    if(positionalArgs.size() != 6){
+                cout<<"usage example: " << argv[0] << " [OPTIONS] inputParentFolder minLengthOfPattern maxLengthOfPattern minNumberOfAffectedSequences outputFolder proteinGroupFolderName" << endl;
+                cout << "Use --help or -h for more information." << endl;
                 return 0;
     }
-
-
-    bool ok;
 
 
 
@@ -398,23 +752,23 @@ int main(int argc, const char *argv[]) {
     // =============
 
     //f. family name
-    string proteinGroupFolderName = argv[6];
+    string proteinGroupFolderName = positionalArgs[5];
 
     //a. inputFolder (folder with *.fasta files)
-    string inputFolder =  argv[1];
+    string inputFolder = positionalArgs[0];
     inputFolder += "/" + proteinGroupFolderName + "/";
 
     //b. minLengthOfPattern
-    unsigned long minLengthOfPattern=toUnsignedLong(argv[2]);
+    unsigned long minLengthOfPattern=toUnsignedLong(positionalArgs[1].c_str());
     
     //c. maxLengthOfPattern
-    unsigned long maxLengthOfPattern=toUnsignedLong(argv[3]);
+    unsigned long maxLengthOfPattern=toUnsignedLong(positionalArgs[2].c_str());
     
     //d. minNumberOfAffectedSequences
-    unsigned long minNumberOfAffectedSequences=toUnsignedLong(argv[4]);
+    unsigned long minNumberOfAffectedSequences=toUnsignedLong(positionalArgs[3].c_str());
     
     //e. output folder
-    string outputFolderByFamily = argv[5]; 
+    string outputFolderByFamily = positionalArgs[4]; 
     outputFolderByFamily += "/" + proteinGroupFolderName;
 
     // More Parameters
@@ -471,7 +825,8 @@ int main(int argc, const char *argv[]) {
     cout << "Phase 3: Load in memory conatenated *.fasta files -> Finished! " << endl;
     
     // 4. Compute LCP. 
-    ok=compute_LCP(n, T, SA, LCP);
+    cout << "Phase 4: Compute LCP (using " << lcpAlgorithm << " algorithm) -> Started! " << endl;
+    ok=compute_LCP(n, T, SA, LCP, lcpAlgorithm);
     if(!ok) return 1;
     cout << "Phase 4: Compute LCP                              -> Finished! " << endl;
  
